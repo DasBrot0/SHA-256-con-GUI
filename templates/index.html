@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>SHA-256 Web Educativa</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <h1>SHA-256</h1>
+
+  <form method="POST" enctype="multipart/form-data">
+    <label><input type="radio" name="mode" value="text" checked> Texto</label>
+    <label><input type="radio" name="mode" value="file"> Archivo</label>
+    <br><br>
+
+    <div id="text-input">
+      <input type="text" name="text" placeholder="Ingresa tu mensaje" style="width:100%;">
+    </div>
+    <div id="file-input" style="display:none;">
+      <input type="file" name="file">
+    </div>
+
+    <label>
+      <input type="checkbox" name="step"> Modo visual paso a paso
+    </label>
+    <br><br>
+
+    <button type="submit">Calcular Hash</button>
+  </form>
+
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      <ul>
+        {% for m in messages %}
+          <li style="color:red;">{{ m }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  {% endwith %}
+
+  {% if result.hash %}
+    <div class="hash-box">
+      <p><strong>Hash:</strong> {{ result.hash }}</p>
+      <p><strong>Timestamp:</strong> {{ result.time }}</p>
+      {% if result.file %}
+        <p><strong>Archivo:</strong> {{ result.file }}</p>
+      {% endif %}
+    </div>
+
+    {% if result.rounds %}
+      <h2>Detalles paso a paso ({{ result.rounds|length }} rondas)</h2>
+      <table>
+        <tr>
+          <th>Ronda</th><th>a</th><th>b</th><th>c</th><th>d</th>
+          <th>e</th><th>f</th><th>g</th><th>h</th>
+        </tr>
+        {% for r in result.rounds %}
+        <tr>
+          <td>{{ r.round }}</td>
+          <td>{{ r.a }}</td><td>{{ r.b }}</td><td>{{ r.c }}</td><td>{{ r.d }}</td>
+          <td>{{ r.e }}</td><td>{{ r.f }}</td><td>{{ r.g }}</td><td>{{ r.h }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+    {% endif %}
+  {% endif %}
+
+  {% if history.entries %}
+    <h2>Historial de cálculos</h2>
+    <table>
+      <tr><th>#</th><th>Tipo</th><th>Entrada</th><th>Hash</th><th>Timestamp</th></tr>
+      {% for e in history.entries %}
+      <tr>
+        <td>{{ loop.index }}</td>
+        <td>{{ e.tipo }}</td>
+        <td>{{ e.input }}</td>
+        <td style="font-family:monospace;">{{ e.hash[:16] }}…</td>
+        <td>{{ e.time }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  {% endif %}
+
+  <script>
+    const txt = document.getElementById('text-input'),
+          fil = document.getElementById('file-input');
+    document.querySelectorAll('input[name="mode"]').forEach(r => {
+      r.addEventListener('change', () => {
+        if (r.value === 'text') {
+          txt.style.display = 'block'; fil.style.display = 'none';
+        } else {
+          txt.style.display = 'none'; fil.style.display = 'block';
+        }
+      });
+    });
+  </script>
+</body>
+</html>

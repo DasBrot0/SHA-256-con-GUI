@@ -1,0 +1,25 @@
+body {
+    font-family: sans-serif;
+    max-width: 800px;
+    margin: auto;
+    padding: 1em;
+}
+
+table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: .5em 0;
+}
+
+th,
+td {
+    border: 1px solid #ccc;
+    padding: .3em .5em;
+    text-align: center;
+}
+
+.hash-box {
+    background: #f4f4f4;
+    padding: .5em;
+    margin: .5em 0;
+}

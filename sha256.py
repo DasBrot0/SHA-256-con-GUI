@@ -2,7 +2,6 @@ import os
 import json
 from datetime import datetime
 from flask import Flask, render_template, request, flash, redirect, session, url_for
-import hashlib
 
 # --- Constantes SHA-256 ---
 K = [

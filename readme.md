@@ -30,7 +30,7 @@ Este proyecto implementa un sistema en Python con interfaz web para calcular y v
 ## 📦 Requisitos
 
 - Python 3.7+
-- Flask (`pip install flask`)
+- Flask (`pip install flask`, `pip install flask-session`)
 
 ---
 

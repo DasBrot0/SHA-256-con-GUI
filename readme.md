@@ -45,6 +45,7 @@ Este proyecto implementa un sistema en Python con interfaz web para calcular y v
 2. Instala Flask (si aún no lo tienes):
    ```bash
    pip install flask
+   pip install flask-session
    ```
 
 3. Ejecuta la aplicación:

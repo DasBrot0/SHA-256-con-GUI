@@ -2,6 +2,7 @@ import os
 import json
 from datetime import datetime
 from flask import Flask, render_template, request, flash, redirect, session, url_for
+from flask_session import Session
 
 # --- Constantes SHA-256 ---
 K = [
@@ -33,11 +34,9 @@ def _maj(x,y,z):
     return (x & y) ^ (x & z) ^ (y & z)
 
 def generate_hash(message, step=False):
-    """
-    Retorna tupla (hash_bytes, rounds) donde rounds es lista de
-    dicts {'round':i,'a':..,'b':..,...,'h':..} si step=True, o None.
-    """
-    # convertir a bytearray
+    import copy
+    from datetime import datetime
+
     if isinstance(message, str):
         msg = bytearray(message, 'ascii')
     elif isinstance(message, (bytes, bytearray)):
@@ -45,32 +44,49 @@ def generate_hash(message, step=False):
     else:
         raise TypeError("Tipo no soportado para hashing")
 
-    # --- Padding ---
+    steps = {} if step else None
+    if step:
+        # Convertir bytearray a hex string para serializar JSON
+        steps['step1'] = msg.hex()
+
+    # Padding
     bit_len = len(msg) * 8
-    msg.append(0x80)
-    while (len(msg)*8 + 64) % 512 != 0:
-        msg.append(0)
-    msg += bit_len.to_bytes(8, 'big')
+    msg_padded = bytearray(msg)
+    msg_padded.append(0x80)
+    while (len(msg_padded)*8 + 64) % 512 != 0:
+        msg_padded.append(0)
+    msg_padded += bit_len.to_bytes(8, 'big')
 
-    # dividir en bloques de 64 bytes
-    blocks = [msg[i:i+64] for i in range(0, len(msg), 64)]
+    if step:
+        steps['step2'] = msg_padded.hex()
 
-    # valores iniciales
-    h0, h1, h2, h3 = 0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a
-    h4, h5, h6, h7 = 0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19
+    # Bloques
+    blocks = [msg_padded[i:i+64] for i in range(0, len(msg_padded), 64)]
+    if step:
+        steps['step3'] = [block.hex() for block in blocks]
 
-    rounds = [] if step else None
+    # Valores iniciales hash
+    h0,h1,h2,h3 = 0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a
+    h4,h5,h6,h7 = 0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19
+    if step:
+        steps['step4'] = {f'h{i}': hex(h) for i,h in enumerate([h0,h1,h2,h3,h4,h5,h6,h7])}
 
-    for block in blocks:
-        # preparar schedule
+    schedules = []
+    rounds_all_blocks = []
+    intermediate_hashes = []
+
+    for block_index, block in enumerate(blocks):
+        # Schedule
         W = [int.from_bytes(block[i*4:(i*4)+4], 'big') for i in range(16)]
         for t in range(16,64):
             val = (_sigma1(W[t-2]) + W[t-7] + _sigma0(W[t-15]) + W[t-16]) & 0xFFFFFFFF
             W.append(val)
+        if step:
+            schedules.append([hex(w) for w in W])
 
         a,b,c,d,e,f,g,h = h0,h1,h2,h3,h4,h5,h6,h7
 
-        # iterar rondas
+        rounds = []
         for t in range(64):
             T1 = (h + _capsigma1(e) + _ch(e,f,g) + K[t] + W[t]) & 0xFFFFFFFF
             T2 = (_capsigma0(a) + _maj(a,b,c)) & 0xFFFFFFFF
@@ -78,15 +94,16 @@ def generate_hash(message, step=False):
             e = (d + T1) & 0xFFFFFFFF
             d = c; c = b; b = a
             a = (T1 + T2) & 0xFFFFFFFF
-
             if step:
                 rounds.append({
                     'round': t+1,
                     'a': hex(a), 'b': hex(b), 'c': hex(c), 'd': hex(d),
                     'e': hex(e), 'f': hex(f), 'g': hex(g), 'h': hex(h)
                 })
+        if step:
+            rounds_all_blocks.append(rounds)
 
-        # actualizar hash intermedio
+        # Actualizar hash intermedio
         h0 = (h0 + a) & 0xFFFFFFFF
         h1 = (h1 + b) & 0xFFFFFFFF
         h2 = (h2 + c) & 0xFFFFFFFF
@@ -95,13 +112,39 @@ def generate_hash(message, step=False):
         h5 = (h5 + f) & 0xFFFFFFFF
         h6 = (h6 + g) & 0xFFFFFFFF
         h7 = (h7 + h) & 0xFFFFFFFF
+        if step:
+            intermediate_hashes.append({
+                'block': block_index+1,
+                'h0': hex(h0), 'h1': hex(h1), 'h2': hex(h2), 'h3': hex(h3),
+                'h4': hex(h4), 'h5': hex(h5), 'h6': hex(h6), 'h7': hex(h7)
+            })
 
     digest = b''.join(hv.to_bytes(4,'big') for hv in (h0,h1,h2,h3,h4,h5,h6,h7))
-    return digest, rounds
+    if step:
+        steps['step5'] = schedules
+        steps['step6'] = rounds_all_blocks
+        steps['step7'] = intermediate_hashes
+        steps['step8'] = {f'h{i}': hex(h) for i,h in enumerate([h0,h1,h2,h3,h4,h5,h6,h7])}
+        from datetime import datetime
+        steps['step9'] = {
+            'hash': digest.hex(),
+            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        }
+
+    return digest, steps
 
 # --- Configuración Flask ---
 app = Flask(__name__)
 app.secret_key = 'cambiá_esto_por_una_clave_segura'
+
+# --- Configuración Flask-Session ---
+app.config['SESSION_TYPE'] = 'filesystem'
+app.config['SESSION_FILE_DIR'] = os.path.join(app.root_path, 'flask_session')
+app.config['SESSION_PERMANENT'] = False
+app.config['SESSION_USE_SIGNER'] = True
+os.makedirs(app.config['SESSION_FILE_DIR'], exist_ok=True)
+Session(app)
+
 UPLOAD_FOLDER = 'uploads'
 HISTORY_FILE = 'history.json'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -121,27 +164,36 @@ def index():
     
     if request.method == 'POST':
         modo = request.form.get('mode')
-        paso = request.form.get('step') == 'on'
+        paso = request.form.get('step') == 'on'  # Modo visual paso a paso activado
         ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         result = {}
 
         if modo == 'text':
             txt = request.form.get('text','')
-            raw, rounds = generate_hash(txt, paso)
+            raw, steps = generate_hash(txt, paso)
             hs = raw.hex()
             history['entries'].append({'tipo':'Texto','input':txt,'hash':hs,'time':ts})
-            result = {'hash':hs,'time':ts,'rounds':rounds}
+            result = {'hash':hs,'time':ts,'steps': steps if paso else None}
 
         else:  # archivo
             f = request.files.get('file')
             if f and f.filename:
+                if paso:
+                    # Solo validar tamaño si paso está activado
+                    f.seek(0, os.SEEK_END)
+                    size = f.tell()
+                    f.seek(0)
+                    if size > 0.5 * 1024 * 1024:  # 500 KB
+                        flash("El archivo es demasiado grande para el modo paso a paso. Máximo 500 KB.")
+                        return redirect(url_for('index'))
+
                 ruta = os.path.join(UPLOAD_FOLDER, f.filename)
                 f.save(ruta)
                 contenido = open(ruta,'rb').read()
-                raw, rounds = generate_hash(contenido, paso)
+                raw, steps = generate_hash(contenido, paso)
                 hs = raw.hex()
                 history['entries'].append({'tipo':'Archivo','input':f.filename,'hash':hs,'time':ts})
-                result = {'hash':hs,'time':ts,'rounds':rounds,'file':f.filename}
+                result = {'hash':hs,'time':ts,'steps': steps if paso else None,'file':f.filename}
             else:
                 flash("No seleccionaste ningún archivo.")
                 return redirect(url_for('index'))
